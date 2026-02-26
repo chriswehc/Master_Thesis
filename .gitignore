@@ -2,11 +2,16 @@
 *.xlsx
 *.xls
 *.png
+*.txt
+*.ipynb
 __pycache__/
 .vscode/
 simulation_results/
-LSEG_download/
 PM_Replication/
 Unsmooting_vs_observed/
-*.ipynb
 .DS_Store
+
+# Allow specific files in LSEG_download
+!LSEG_download/Fund_Flows_Regression.py
+!LSEG_download/LSEG_download.ipynb
+!LSEG_download/goldstein_model2_coefficients.pkl
