@@ -537,7 +537,7 @@ def plot_eltif_results(eltif_results, save_path='eltif_simulation_revolving_cred
     sample_paths = eltif_results.index.get_level_values('path').unique()
     for path in sample_paths:
         path_data = eltif_results.xs(path, level='path')
-        ax.plot(path_data.index, path_data['TNA'] / 1e6, alpha=0.05, color='blue', linewidth=0.3)
+        ax.plot(path_data.index, path_data['TNA'] / 1e6, alpha=0.15, color='blue', linewidth=0.8)
     ax.set_title('TNA Evolution (all paths)')
     ax.set_xlabel('Quarter')
     ax.set_ylabel('TNA (€M)')
@@ -569,11 +569,11 @@ def plot_eltif_results(eltif_results, save_path='eltif_simulation_revolving_cred
     for path in sample_paths:
         path_data = eltif_results.xs(path, level='path')
         ax.plot(path_data.index, path_data['Credit_Outstanding'] / 1e6,
-                alpha=0.05, color='red', linewidth=0.3)
+                alpha=0.15, color='red', linewidth=0.8)
     all_credit = eltif_results.groupby(level='Quarter')['Credit_Outstanding']
     quarters = eltif_results.index.get_level_values('Quarter').unique()
-    ax.plot(quarters, all_credit.median() / 1e6, color='darkred', linewidth=1.5, label='Median')
-    ax.plot(quarters, all_credit.quantile(0.90) / 1e6, color='darkred', linewidth=1.5, linestyle='--', label='p90')
+    ax.plot(quarters, all_credit.median() / 1e6, color='darkred', linewidth=2.5, label='Median')
+    ax.plot(quarters, all_credit.quantile(0.90) / 1e6, color='darkred', linewidth=2.5, linestyle='--', label='p90')
     ax.set_title('Credit Outstanding (all paths)')
     ax.set_xlabel('Quarter')
     ax.set_ylabel('Outstanding (€M)')
@@ -639,15 +639,15 @@ def plot_eltif_results(eltif_results, save_path='eltif_simulation_revolving_cred
         path_data = eltif_results.xs(path, level='path')
         cumulative_interest = path_data['Credit_Interest'].cumsum()
         ax.plot(path_data.index, cumulative_interest / 1e6,
-                alpha=0.05, color='darkred', linewidth=0.3)
+                alpha=0.15, color='darkred', linewidth=0.8)
     all_cumcost = eltif_results.groupby(level='path')['Credit_Interest'].cumsum()
     all_cumcost_df = all_cumcost.rename('CumCost').to_frame()
     all_cumcost_df.index = eltif_results.index
     quarters = eltif_results.index.get_level_values('Quarter').unique()
     p50_cost = all_cumcost_df.groupby(level='Quarter')['CumCost'].median() / 1e6
     p90_cost = all_cumcost_df.groupby(level='Quarter')['CumCost'].quantile(0.90) / 1e6
-    ax.plot(quarters, p50_cost, color='darkred', linewidth=1.5, label='Median')
-    ax.plot(quarters, p90_cost, color='darkred', linewidth=1.5, linestyle='--', label='p90')
+    ax.plot(quarters, p50_cost, color='darkred', linewidth=2.5, label='Median')
+    ax.plot(quarters, p90_cost, color='darkred', linewidth=2.5, linestyle='--', label='p90')
     ax.set_title('Cumulative Credit Cost (all paths)')
     ax.set_xlabel('Quarter')
     ax.set_ylabel('Cumulative Interest (€M)')
