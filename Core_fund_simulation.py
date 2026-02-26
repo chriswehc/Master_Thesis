@@ -341,7 +341,10 @@ def simulate_fund_with_buffer(
             # Safety buffer we always keep (10% of TNA)
             safety_buffer = tna_after_flow * 0.10
             
-            if credit_outstanding > 0:
+            # Only repay credit after a minimum 2-quarter holding period
+            # (prevents immediate repayment in the very next quarter after drawing)
+            quarters_with_credit = (results.loc[1:t-1, 'Credit_Outstanding'] > 0).sum()
+            if credit_outstanding > 0 and quarters_with_credit >= 2:
                 excess_cash = total_cash_after_inflow - safety_buffer
                 if excess_cash > 0:
                     credit_repayment = min(credit_outstanding, excess_cash)
@@ -531,11 +534,11 @@ def plot_eltif_results(eltif_results, save_path='eltif_simulation_revolving_cred
     
     # 1. TNA Evolution
     ax = axes[0, 0]
-    sample_paths = eltif_results.index.get_level_values('path').unique()[:100]
+    sample_paths = eltif_results.index.get_level_values('path').unique()
     for path in sample_paths:
         path_data = eltif_results.xs(path, level='path')
-        ax.plot(path_data.index, path_data['TNA'] / 1e6, alpha=0.1, color='blue')
-    ax.set_title('TNA Evolution (100 paths)')
+        ax.plot(path_data.index, path_data['TNA'] / 1e6, alpha=0.05, color='blue', linewidth=0.3)
+    ax.set_title('TNA Evolution (all paths)')
     ax.set_xlabel('Quarter')
     ax.set_ylabel('TNA (€M)')
     ax.grid(True, alpha=0.3)
@@ -562,16 +565,16 @@ def plot_eltif_results(eltif_results, save_path='eltif_simulation_revolving_cred
     
     # 4. Credit Outstanding Over Time (all paths fan chart)
     ax = axes[1, 0]
-    sample_paths = eltif_results.index.get_level_values('path').unique()[:100]
+    sample_paths = eltif_results.index.get_level_values('path').unique()
     for path in sample_paths:
         path_data = eltif_results.xs(path, level='path')
         ax.plot(path_data.index, path_data['Credit_Outstanding'] / 1e6,
-                alpha=0.1, color='red', linewidth=0.5)
+                alpha=0.05, color='red', linewidth=0.3)
     all_credit = eltif_results.groupby(level='Quarter')['Credit_Outstanding']
     quarters = eltif_results.index.get_level_values('Quarter').unique()
     ax.plot(quarters, all_credit.median() / 1e6, color='darkred', linewidth=1.5, label='Median')
     ax.plot(quarters, all_credit.quantile(0.90) / 1e6, color='darkred', linewidth=1.5, linestyle='--', label='p90')
-    ax.set_title('Credit Outstanding (100 paths)')
+    ax.set_title('Credit Outstanding (all paths)')
     ax.set_xlabel('Quarter')
     ax.set_ylabel('Outstanding (€M)')
     ax.legend(fontsize=8)
@@ -631,12 +634,12 @@ def plot_eltif_results(eltif_results, save_path='eltif_simulation_revolving_cred
     
     # 9. Cumulative Credit Cost (all paths fan chart)
     ax = axes[2, 2]
-    sample_paths = eltif_results.index.get_level_values('path').unique()[:100]
+    sample_paths = eltif_results.index.get_level_values('path').unique()
     for path in sample_paths:
         path_data = eltif_results.xs(path, level='path')
         cumulative_interest = path_data['Credit_Interest'].cumsum()
         ax.plot(path_data.index, cumulative_interest / 1e6,
-                alpha=0.1, color='darkred', linewidth=0.5)
+                alpha=0.05, color='darkred', linewidth=0.3)
     all_cumcost = eltif_results.groupby(level='path')['Credit_Interest'].cumsum()
     all_cumcost_df = all_cumcost.rename('CumCost').to_frame()
     all_cumcost_df.index = eltif_results.index
@@ -645,7 +648,7 @@ def plot_eltif_results(eltif_results, save_path='eltif_simulation_revolving_cred
     p90_cost = all_cumcost_df.groupby(level='Quarter')['CumCost'].quantile(0.90) / 1e6
     ax.plot(quarters, p50_cost, color='darkred', linewidth=1.5, label='Median')
     ax.plot(quarters, p90_cost, color='darkred', linewidth=1.5, linestyle='--', label='p90')
-    ax.set_title('Cumulative Credit Cost (100 paths)')
+    ax.set_title('Cumulative Credit Cost (all paths)')
     ax.set_xlabel('Quarter')
     ax.set_ylabel('Cumulative Interest (€M)')
     ax.legend(fontsize=8)
