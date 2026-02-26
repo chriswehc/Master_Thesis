@@ -25,6 +25,7 @@ import pickle
 
 ## LOAD NECCESSARY DATA
 
+
 # Load simulated PM returns and cash returns with macro regimes
 pm_cash_sim_returns = pd.read_csv('simulated_pm_cash_returns.csv')
 
@@ -48,17 +49,23 @@ coefficients = load_goldstein_coefficients()
 # ALPHA CALCULATION
 # =============================================================================
 
-def calculate_rolling_alpha(pm_returns_path, window=8):
+def calculate_rolling_alpha(pm_returns_path, ter, window=8):
     """
     Calculate rolling 2-year (8-quarter) alpha
     Benchmarks are pre-aligned by regime in the simulated data
+    
+    NOTE: Returns are adjusted for TER (net of fees) to match Goldstein methodology
     """
     
     # Extract fund return (average of Hamilton Lane indices)
     pm_cols = [c for c in pm_returns_path.columns
                if 'Hamilton' in c or 'Private' in c]
     
-    fund_return = pm_returns_path[pm_cols].mean(axis=1).reset_index(drop=True)
+    gross_fund_return = pm_returns_path[pm_cols].mean(axis=1).reset_index(drop=True)
+    
+    # Subtract TER to get net return (TER is annual, convert to quarterly)
+    ter_quarterly = ter / 4
+    fund_return = gross_fund_return - ter_quarterly
     
     # Benchmarks are already in the dataframe
     excess_fund = fund_return - pm_returns_path['RF']
@@ -104,11 +111,17 @@ def calculate_flow_macro_regime(
     regime,
     lagged_flow,
     tna_lag,
-    ter,
     coefficients,
     max_flow_rate=0.5,
 ):
-    """Calculate fund flow using Goldstein model with macro regime interactions"""
+    """
+    Calculate fund flow using Goldstein model with macro regime interactions
+    
+    NOTE: TER is NOT included as a parameter because:
+    - Alpha is already calculated on NET returns (after fees)
+    - TER effect is embedded in the alpha calculation
+    - Including TER here would double-count the fee impact
+    """
     
     # Extract coefficients
     baseline = coefficients['macro_regime']['baseline']
@@ -129,16 +142,14 @@ def calculate_flow_macro_regime(
     flow += regime_coefs['alpha'] * alpha
     flow += regime_coefs['alpha_neg'] * alpha_x_negative
     
-    # CONTROLS
+    # CONTROLS (without TER - already in net returns)
     flow += controls['lagged_flow'] * lagged_flow
     flow += controls['log_tna'] * np.log(tna_lag) if tna_lag > 0 else 0
-    flow += controls['ter'] * ter
 
     # Max redemption limit
     flow = np.clip(flow, -max_flow_rate, max_flow_rate)
 
     return flow
-
 
 # =============================================================================
 # SINGLE PATH SIMULATION WITH REVOLVING CREDIT
@@ -195,11 +206,14 @@ def simulate_fund_with_buffer(
     pm_cols = [c for c in pm_returns_path.columns 
                if 'Hamilton' in c and 'Private' in c]
     
-    results['PM_Return'] = pm_returns_path[pm_cols].mean(axis=1).values
+    # Calculate net PM return (after TER)
+    ter_quarterly = ter / 4
+    gross_pm_return = pm_returns_path[pm_cols].mean(axis=1).values
+    results['PM_Return'] = gross_pm_return - ter_quarterly
     results['Regime'] = pm_returns_path['macro_regime'].values
 
     # Rolling alpha
-    results['Alpha'] = calculate_rolling_alpha(pm_returns_path, window=8).values
+    results['Alpha'] = calculate_rolling_alpha(pm_returns_path, ter, window=8).values
 
     lagged_flow = 0
     credit_outstanding = 0
@@ -226,7 +240,6 @@ def simulate_fund_with_buffer(
                 regime=regime,
                 lagged_flow=lagged_flow,
                 tna_lag=tna_lag,
-                ter=ter,
                 coefficients=coefficients
             )
 
@@ -319,18 +332,19 @@ def simulate_fund_with_buffer(
             # ============================================================
             tna_after_flow = tna_after_return + flow_amount
             
-            # Calculate total available cash after this inflow
-            total_cash_after_inflow = (tna_after_flow * cash_weight) + flow_amount
-            target_cash = tna_after_flow * cash_weight
-            
-            # ⭐ STRATEGIC REPAYMENT: Only repay if we have SIGNIFICANT excess
-            repayment_trigger = tna_after_flow * repayment_threshold
+            # Cash BEFORE inflow (grown from previous quarter)
+            cash_before_inflow = tna_lag * cash_weight * (1 + cash_return)
+
+            # Total cash after adding the inflow
+            total_cash_after_inflow = cash_before_inflow + flow_amount
+
+            # Safety buffer we always keep (10% of TNA)
+            safety_buffer = tna_after_flow * 0.10
             
             if credit_outstanding > 0:
-                # Check if we have excess cash beyond trigger
-                if total_cash_after_inflow > (target_cash + repayment_trigger):
-                    # Repay using 50% of the inflow (keep half for operations)
-                    credit_repayment = min(credit_outstanding, flow_amount * 0.5)
+                excess_cash = total_cash_after_inflow - safety_buffer
+                if excess_cash > 0:
+                    credit_repayment = min(credit_outstanding, excess_cash)
                     credit_outstanding -= credit_repayment
                     results.loc[t, 'Credit_Repaid'] = credit_repayment
                     tna_after_flow -= credit_repayment
@@ -546,14 +560,21 @@ def plot_eltif_results(eltif_results, save_path='eltif_simulation_revolving_cred
     ax.set_ylabel('Frequency')
     ax.grid(True, alpha=0.3)
     
-    # 4. Credit Outstanding Over Time (sample path)
+    # 4. Credit Outstanding Over Time (all paths fan chart)
     ax = axes[1, 0]
-    sample_path = eltif_results.xs(0, level='path')
-    ax.plot(sample_path.index, sample_path['Credit_Outstanding'] / 1e6, color='red', linewidth=1.5)
-    ax.fill_between(sample_path.index, 0, sample_path['Credit_Outstanding'] / 1e6, alpha=0.3, color='red')
-    ax.set_title('Credit Outstanding (Path 0)')
+    sample_paths = eltif_results.index.get_level_values('path').unique()[:100]
+    for path in sample_paths:
+        path_data = eltif_results.xs(path, level='path')
+        ax.plot(path_data.index, path_data['Credit_Outstanding'] / 1e6,
+                alpha=0.1, color='red', linewidth=0.5)
+    all_credit = eltif_results.groupby(level='Quarter')['Credit_Outstanding']
+    quarters = eltif_results.index.get_level_values('Quarter').unique()
+    ax.plot(quarters, all_credit.median() / 1e6, color='darkred', linewidth=1.5, label='Median')
+    ax.plot(quarters, all_credit.quantile(0.90) / 1e6, color='darkred', linewidth=1.5, linestyle='--', label='p90')
+    ax.set_title('Credit Outstanding (100 paths)')
     ax.set_xlabel('Quarter')
     ax.set_ylabel('Outstanding (€M)')
+    ax.legend(fontsize=8)
     ax.grid(True, alpha=0.3)
     
     # 5. Credit Interest Distribution
@@ -608,15 +629,26 @@ def plot_eltif_results(eltif_results, save_path='eltif_simulation_revolving_cred
     ax.set_ylabel('Flow Rate (%)')
     ax.grid(True, alpha=0.3)
     
-    # 9. Cumulative Credit Interest (sample path)
+    # 9. Cumulative Credit Cost (all paths fan chart)
     ax = axes[2, 2]
-    sample_path = eltif_results.xs(0, level='path')
-    cumulative_interest = sample_path['Credit_Interest'].cumsum()
-    ax.plot(sample_path.index, cumulative_interest / 1e6, color='darkred', linewidth=1.5)
-    ax.fill_between(sample_path.index, 0, cumulative_interest / 1e6, alpha=0.3, color='darkred')
-    ax.set_title('Cumulative Credit Cost (Path 0)')
+    sample_paths = eltif_results.index.get_level_values('path').unique()[:100]
+    for path in sample_paths:
+        path_data = eltif_results.xs(path, level='path')
+        cumulative_interest = path_data['Credit_Interest'].cumsum()
+        ax.plot(path_data.index, cumulative_interest / 1e6,
+                alpha=0.1, color='darkred', linewidth=0.5)
+    all_cumcost = eltif_results.groupby(level='path')['Credit_Interest'].cumsum()
+    all_cumcost_df = all_cumcost.rename('CumCost').to_frame()
+    all_cumcost_df.index = eltif_results.index
+    quarters = eltif_results.index.get_level_values('Quarter').unique()
+    p50_cost = all_cumcost_df.groupby(level='Quarter')['CumCost'].median() / 1e6
+    p90_cost = all_cumcost_df.groupby(level='Quarter')['CumCost'].quantile(0.90) / 1e6
+    ax.plot(quarters, p50_cost, color='darkred', linewidth=1.5, label='Median')
+    ax.plot(quarters, p90_cost, color='darkred', linewidth=1.5, linestyle='--', label='p90')
+    ax.set_title('Cumulative Credit Cost (100 paths)')
     ax.set_xlabel('Quarter')
     ax.set_ylabel('Cumulative Interest (€M)')
+    ax.legend(fontsize=8)
     ax.grid(True, alpha=0.3)
     
     plt.tight_layout()
