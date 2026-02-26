@@ -283,14 +283,11 @@ def load_fund_types(filepath='../Clean_funds_with_asset_class.csv'):
     print("="*80)
 
     fund_types = pd.read_csv(filepath)
+    fund_types = fund_types.dropna(subset=['FundClassLipperID'])   # 9 rows have no ID — unusable for join
     fund_types['Instrument'] = fund_types['FundClassLipperID'].astype(int).astype(str)
     fund_types = fund_types[['Instrument', 'IssueLipperGlobalSchemeName']]
 
-    print(f"\n✓ Loaded fund type data:")
-    print(f"  Total funds: {len(fund_types):,}")
-    print(f"  Unique asset classes: {fund_types['IssueLipperGlobalSchemeName'].nunique()}")
-    print("\n  Asset class distribution:")
-    print(fund_types['IssueLipperGlobalSchemeName'].value_counts().to_string())
+   
 
     return fund_types
 
@@ -338,18 +335,10 @@ def filter_by_asset_class(df, fund_types, asset_classes=None, keywords=None):
             pattern, case=False, na=False, regex=True
         )
     else:
-        print("\n⚠️  No asset class filter applied — using all funds.")
+        print("No asset class filter applied — using all funds.")
         return df
 
     df_filtered = df[mask].copy()
-
-    print(f"\n  Before: {n_before:,} obs | {funds_before:,} funds")
-    print(f"  After:  {len(df_filtered):,} obs | {df_filtered['Instrument'].nunique():,} funds")
-    print(f"  Removed: {100*(n_before - len(df_filtered))/n_before:.1f}% of observations")
-    print(f"\n  Asset classes included:")
-    for cls, cnt in df_filtered['IssueLipperGlobalSchemeName'].value_counts().items():
-        print(f"    {cls:<45} {cnt:>7,} obs")
-    print("="*80 + "\n")
 
     return df_filtered
 

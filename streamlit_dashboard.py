@@ -99,7 +99,7 @@ st.sidebar.subheader("Paths shown in fan charts")
 n_display = st.sidebar.slider(
     "Number of paths to display",
     min_value=10,
-    max_value=min(n_paths, 500),
+    max_value=min(n_paths, 10000),
     value=min(n_paths, 200),
     step=10,
     help="Fewer paths = faster rendering",
@@ -237,7 +237,7 @@ with col_left:
         height=350, margin=dict(t=10, b=40),
         legend=dict(orientation="h", y=-0.25),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 # ── 2. Credit Usage Probability by Regime ─────
 with col_mid:
@@ -263,7 +263,7 @@ with col_mid:
         height=350,
         margin=dict(t=10, b=40),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 # ── 3. Flow Rate Distribution ─────────────────
 with col_right:
@@ -279,7 +279,7 @@ with col_right:
         xaxis_title="Flow Rate (%)", yaxis_title="Count",
         showlegend=False, height=350, margin=dict(t=10, b=40),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 # ─────────────────────────────────────────────
 # Plots — Row 2
@@ -308,11 +308,11 @@ with col_left:
     )
     fig.add_trace(go.Scatter(
         x=pct_c.index, y=pct_c["median"] / 1e6,
-        mode="lines", line=dict(color="darkred", width=2.5), name="Median",
+        mode="lines", line=dict(color="darkred", width=4), name="Median",
     ))
     fig.add_trace(go.Scatter(
         x=pct_c.index, y=pct_c["p90"] / 1e6,
-        mode="lines", line=dict(color="darkred", width=2, dash="dash"), name="p90",
+        mode="lines", line=dict(color="darkred", width=4, dash="dash"), name="p90",
     ))
 
     fig.update_layout(
@@ -320,7 +320,7 @@ with col_left:
         height=350, margin=dict(t=10, b=40),
         legend=dict(orientation="h", y=-0.25),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 # ── 5. Credit Interest Distribution ───────────
 with col_mid:
@@ -336,7 +336,7 @@ with col_mid:
             xaxis_title="Interest Paid (€)", yaxis_title="Count",
             showlegend=False, height=350, margin=dict(t=10, b=40),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     else:
         st.info("No credit interest paid in selected filter.")
 
@@ -354,7 +354,7 @@ with col_right:
             xaxis_title="Shortfall (€M)", yaxis_title="Count",
             showlegend=False, height=350, margin=dict(t=10, b=40),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     else:
         st.info("No shortfalls in selected filter.")
 
@@ -382,7 +382,7 @@ with col_left:
         xaxis_title="Final TNA (€M)", yaxis_title="Count",
         showlegend=False, height=350, margin=dict(t=10, b=40),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 # ── 8. Flow-Performance Relationship ──────────
 with col_mid:
@@ -405,7 +405,7 @@ with col_mid:
         height=350, margin=dict(t=10, b=40),
         legend=dict(orientation="h", y=-0.30),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 # ── 9. Cumulative Credit Cost ─────────────────
 with col_right:
@@ -418,7 +418,7 @@ with col_right:
         fig.add_trace(go.Scatter(
             x=g_q["Quarter"], y=g_q["Credit_Interest"].cumsum() / 1e6,
             mode="lines",
-            line=dict(color="darkred", width=0.6),
+            line=dict(color="darkred", width=3),
             opacity=0.15,
             showlegend=False,
             hoverinfo="skip",
@@ -445,7 +445,7 @@ with col_right:
         height=350, margin=dict(t=10, b=40),
         legend=dict(orientation="h", y=-0.25),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 # ─────────────────────────────────────────────
 # Final TNA summary table
@@ -465,7 +465,7 @@ summary = pd.DataFrame({
         f"{final_tna_all.std():.2f}",
     ],
 })
-st.dataframe(summary, use_container_width=False, hide_index=True)
+st.dataframe(summary, width='content', hide_index=True)
 
 # ─────────────────────────────────────────────
 # Raw data explorer
@@ -480,7 +480,7 @@ with st.expander("🔍 Raw Data Explorer", expanded=False):
             "Credit_Outstanding": "€{:,.0f}", "Credit_Interest": "€{:,.0f}",
             "PM_Return": "{:.4f}", "Alpha": "{:.4f}", "Flow_Rate": "{:.4f}",
         }),
-        use_container_width=True,
+        width='stretch',
         height=400,
     )
 
