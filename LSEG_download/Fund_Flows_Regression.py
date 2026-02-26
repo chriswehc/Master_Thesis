@@ -25,7 +25,6 @@ def download_benchmarks(start_date='1991-01-01', end_date='2024-12-31'):
     print("="*80)
     
     # Download S&P 500
-    print("\n1. Downloading S&P 500...")
     sp500 = yf.download('^GSPC', start=start_date, end=end_date, progress=False)
     if isinstance(sp500.columns, pd.MultiIndex):
         sp500_prices = sp500['Close']['^GSPC']
@@ -33,7 +32,6 @@ def download_benchmarks(start_date='1991-01-01', end_date='2024-12-31'):
         sp500_prices = sp500['Close']
     
     # Download Vanguard Total Bond Market Index Fund
-    print("2. Downloading Vanguard Total Bond Market (VBMFX)...")
     vbmfx = yf.download('VBMFX', start=start_date, end=end_date, progress=False)
     if isinstance(vbmfx.columns, pd.MultiIndex):
         bond_prices = vbmfx['Close']['VBMFX']
@@ -41,7 +39,6 @@ def download_benchmarks(start_date='1991-01-01', end_date='2024-12-31'):
         bond_prices = vbmfx['Close']
     
     # Download 3-month T-bill rate
-    print("3. Downloading 3-month T-bill rate...")
     try:
         tbill_data = yf.download('^IRX', start=start_date, end=end_date, progress=False)
         if isinstance(tbill_data.columns, pd.MultiIndex):
@@ -49,7 +46,6 @@ def download_benchmarks(start_date='1991-01-01', end_date='2024-12-31'):
         else:
             tbill_annual = tbill_data['Close'] / 100
         tbill_daily = tbill_annual / 252  # Convert annual to daily
-        print("   ✓ Downloaded from Yahoo Finance (^IRX)")
     except Exception as e:
         print(f"   WARNING: Could not download T-bill ({str(e)}). Using 0% risk-free rate.")
         tbill_daily = pd.Series(0, index=sp500_prices.index)
@@ -63,7 +59,6 @@ def download_benchmarks(start_date='1991-01-01', end_date='2024-12-31'):
     })
     
     # CRITICAL: Resample to QUARTERLY (end of quarter)
-    print("\n4. Resampling to QUARTERLY frequency (to match fund data)...")
     daily_data = daily_data.set_index('Date')
     
     # Resample to quarter-end
@@ -86,17 +81,6 @@ def download_benchmarks(start_date='1991-01-01', end_date='2024-12-31'):
     benchmarks = quarterly[['SP500_Return', 'Bond_Market_Return', 'RF', 'Excess_SP500', 'Excess_Bond']].copy()
     benchmarks = benchmarks.reset_index()
     benchmarks = benchmarks.dropna(subset=['SP500_Return', 'Bond_Market_Return'])
-    
-    print(f"\n✓ Benchmark data downloaded and resampled to QUARTERLY:")
-    print(f"  Date range: {benchmarks['Date'].min().date()} to {benchmarks['Date'].max().date()}")
-    print(f"  Observations: {len(benchmarks)}")
-    print(f"  Frequency: Quarterly (end of quarter)")
-    
-    print("\n  Sample benchmark returns:")
-    print(benchmarks.head())
-    
-    print("\n  Benchmark statistics (QUARTERLY):")
-    print(benchmarks[['SP500_Return', 'Bond_Market_Return', 'RF']].describe())
     
     return benchmarks
 
@@ -126,20 +110,22 @@ def load_return_data():
     returns['Date'] = pd.to_datetime(returns['Date'])
     returns = returns.rename(columns={'Rolling Performance': 'Return'})
     
-    # CRITICAL: Convert from percent to decimal
-    # Your data: 7.719205 → 0.07719205
-    returns['Return'] = returns['Return'] / 100
+    # Check if returns are already in decimal or percent
+    median_return = returns['Return'].median()
+    if abs(median_return) > 1:
+        print(f"  Returns appear to be in percent (median: {median_return:.2f}), converting to decimal")
+        returns['Return'] = returns['Return'] / 100
+    else:
+        print(f"  Returns appear to be in decimal (median: {median_return:.4f})")
     
-    print(f"\n✓ Return data loaded:")
-    print(f"  Total observations: {len(returns):,}")
-    print(f"  Unique funds: {returns['Instrument'].nunique()}")
-    print(f"  Date range: {returns['Date'].min().date()} to {returns['Date'].max().date()}")
+    # Validate returns are in reasonable range (-100% to +100% per quarter)
+    before = len(returns)
+    returns = returns[(returns['Return'] >= -1) & (returns['Return'] <= 1)]
+    after = len(returns)
+    if before > after:
+        print(f"  Removed {before - after:,} rows with extreme returns")
     
-    print("\n  Sample returns:")
-    print(returns.head())
-    
-    print("\n  Return statistics:")
-    print(returns['Return'].describe())
+    print(f"  Return statistics: min={returns['Return'].min():.2%}, max={returns['Return'].max():.2%}, median={returns['Return'].median():.4f}")
     
     return returns
 
@@ -161,10 +147,7 @@ def load_tna_data():
     for file in files:
         df = pd.read_csv(file)
         df['Date'] = pd.to_datetime(df['Date'])
-        
-        # Convert from wide to long format
-        # Before: Date | LP40000007 | LP40000008 | ...
-        # After:  Date | Instrument | TNA
+       
         df_long = df.melt(
             id_vars=['Date'], 
             var_name='Instrument', 
@@ -181,16 +164,6 @@ def load_tna_data():
     
     # Remove zero or negative TNA (data errors)
     tna = tna[tna['TNA'] > 0]
-    
-    print(f"\n✓ TNA data loaded:")
-    print(f"  Total observations: {len(tna):,}")
-    print(f"  Unique funds: {tna['Instrument'].nunique()}")
-    
-    print("\n  Sample TNA:")
-    print(tna.head())
-    
-    print("\n  TNA statistics:")
-    print(tna['TNA'].describe())
     
     return tna
 
@@ -246,6 +219,15 @@ def load_fund_characteristics(returns):
     
     # Merge TER with inception dates from TER files
     fund_chars = pd.merge(ter_latest, inception_from_ter, on='Instrument', how='outer')
+
+    fund_chars['TER'] = pd.to_numeric(fund_chars['TER'], errors='coerce')
+
+    # Convert percent to decimal 
+    median_ter = fund_chars['TER'].median()
+    if median_ter > 0.1:
+        print(f"\n  Converting TER from percent to decimal (median: {median_ter:.2f}%)")
+        fund_chars['TER'] = fund_chars['TER'] / 100
+        print(f"  After conversion: {fund_chars['TER'].median():.6f}")
     
     # Calculate first return date for each fund (as fallback)
     print("\nCalculating first return dates as fallback for missing inception dates...")
@@ -287,12 +269,94 @@ def load_fund_characteristics(returns):
 
 # %%
 
-def calculate_alpha_rolling(fund_returns, benchmarks, window=8):
+# %%
+def load_fund_types(filepath='fund_types.csv'):
+    """
+    Load fund type information from CSV
+    
+    Expected columns:
+    - Instrument: Lipper code
+    - Issue Lipper Global Scheme Name: Fund category/type
+    """
+    print("\n" + "="*80)
+    print("LOADING FUND TYPE DATA")
+    print("="*80)
+    
+    fund_types = pd.read_csv(filepath)
+    
+    print(f"\n✓ Loaded fund type data:")
+    print(f"  Total funds: {len(fund_types):,}")
+    print(f"  Unique types: {fund_types['Issue Lipper Global Scheme Name'].nunique()}")
+    
+    print("\n  Sample fund types:")
+    print(fund_types['Issue Lipper Global Scheme Name'].value_counts().head(10))
+    
+    return fund_types
+
+
+def filter_bond_funds(df, fund_types):
+    """
+    Filter dataset to include ONLY bond funds
+    
+    Looks for keywords in 'Issue Lipper Global Scheme Name':
+    - 'Bond'
+    - 'Debt'
+    - 'Fixed Income'
+    - 'Credit'
+    
+    Parameters:
+    -----------
+    df : DataFrame
+        Your main dataset with flows
+    fund_types : DataFrame
+        Fund type information from load_fund_types()
+    
+    Returns:
+    --------
+    DataFrame : Filtered to bond funds only
+    """
+    print("\n" + "="*80)
+    print("FILTERING FOR BOND FUNDS")
+    print("="*80)
+    
+    # Merge fund types with main data
+    df = pd.merge(df, fund_types[['Instrument', 'Issue Lipper Global Scheme Name']], 
+                  on='Instrument', how='left')
+    
+    print(f"\nBefore filtering: {len(df):,} observations, {df['Instrument'].nunique():,} funds")
+    
+    # Create filter for bond-related funds
+    bond_keywords = ['bond', 'debt', 'fixed income', 'credit', 'income']
+    
+    # Case-insensitive matching
+    bond_mask = df['Issue Lipper Global Scheme Name'].str.lower().str.contains(
+        '|'.join(bond_keywords), 
+        na=False, 
+        regex=True
+    )
+    
+    # Apply filter
+    df_bonds = df[bond_mask].copy()
+    
+    print(f"\nAfter filtering: {len(df_bonds):,} observations, {df_bonds['Instrument'].nunique():,} funds")
+    print(f"Reduction: {100*(len(df) - len(df_bonds))/len(df):.1f}% of observations removed")
+    
+    print("\n  Bond fund types found:")
+    print(df_bonds['Issue Lipper Global Scheme Name'].value_counts().head(15))
+    
+    return df_bonds
+
+
+# %%
+
+def calculate_alpha_rolling(fund_returns, benchmarks, fund_chars, window=8):
     """
     Calculate rolling two year alpha for each fund
     Alpha = intercept from: Excess_Fund_Return ~ Excess_Bond + Excess_Stock
     
     This follows Goldstein et al. (2017) exactly
+    
+    NOTE: Returns are adjusted for TER (net of fees) to match Goldstein methodology
     """
     print("\n" + "="*80)
     print("STEP 5: CALCULATING ROLLING ALPHAS")
@@ -306,8 +370,22 @@ def calculate_alpha_rolling(fund_returns, benchmarks, window=8):
         how='left'
     )
     
-    # Calculate excess fund return
-    df['Excess_Fund_Return'] = df['Return'] - df['RF']
+    # Merge TER from fund characteristics
+    df = pd.merge(df, fund_chars[['Instrument', 'TER']], on='Instrument', how='left')
+    
+    # Fill missing TER with median TER (better than 0 which would overstate returns)
+    ter_median = df['TER'].median()
+    df['TER'] = df['TER'].fillna(ter_median)
+    
+    print(f"  TER statistics after conversion:")
+    print(f"    Min: {df['TER'].min():.4f}, Max: {df['TER'].max():.4f}, Median: {df['TER'].median():.4f}")
+    
+    # Calculate NET return (after TER) - TER is annual, convert to quarterly
+    df['TER_Quarterly'] = df['TER'] / 4
+    df['Net_Return'] = df['Return'] - df['TER_Quarterly']
+    
+    # Calculate excess fund return using NET return (after fees)
+    df['Excess_Fund_Return'] = df['Net_Return'] - df['RF']
     
     # Sort by fund and date
     df = df.sort_values(['Instrument', 'Date']).reset_index(drop=True)
@@ -419,7 +497,19 @@ def calculate_flows(returns, tna, fund_chars, alphas):
     # Drop first observation for each fund (no lagged TNA)
     df = df[df['Flow_Rate'].notna()]
     
-    print(f"After calculating flows: {len(df):,} observations")
+    # Data validation - check for extreme values
+    print(f"\nData validation before cleaning:")
+    print(f"  Flow_Rate: min={df['Flow_Rate'].min():.2f}, max={df['Flow_Rate'].max():.2f}, median={df['Flow_Rate'].median():.4f}")
+    print(f"  TNA_lag: min={df['TNA_lag'].min():.2f}, max={df['TNA_lag'].max():.2e}")
+    
+    # Remove extreme Flow_Rate values (beyond +/- 200% - likely data errors)
+    # Also remove rows where TNA_lag is extremely small (< $10,000)
+    before = len(df)
+    df = df[(df['Flow_Rate'] >= -2) & (df['Flow_Rate'] <= 2)]  # Keep only -200% to +200%
+    df = df[df['TNA_lag'] >= 10000]  # Remove funds with TNA < $10k
+    after = len(df)
+    print(f"\n  Removed {before - after:,} rows with extreme values")
+    print(f"  Flow_Rate after cleaning: min={df['Flow_Rate'].min():.2f}, max={df['Flow_Rate'].max():.2f}, median={df['Flow_Rate'].median():.4f}")
     
     # Add TER from fund characteristics
     df = pd.merge(df, fund_chars[['Instrument', 'TER']], on='Instrument', how='left')
@@ -478,10 +568,28 @@ def clean_data(df):
     cols_to_check = ['Alpha', 'TER', 'Log_TNA_lag', 'Flow_Rate', 'macro_regime']
     df = df.dropna(subset=cols_to_check)
     
-    # WINSORIZATION: Cap the top and bottom 1% to neutralize outliers
+    # More aggressive cleaning before winsorization
+    print(f"\nBefore aggressive cleaning: {len(df):,} rows")
+    print(f"  Flow_Rate: min={df['Flow_Rate'].min():.2f}, max={df['Flow_Rate'].max():.2f}")
+    print(f"  Alpha: min={df['Alpha'].min():.2f}, max={df['Alpha'].max():.2f}")
+    print(f"  Log_TNA_lag: min={df['Log_TNA_lag'].min():.2f}, max={df['Log_TNA_lag'].max():.2f}")
+    
+    # Cap extreme values before winsorization
+    df = df[df['Flow_Rate'] >= -2]  # Remove extreme negative flows
+    df = df[df['Flow_Rate'] <= 2]   # Remove extreme positive flows
+    df = df[df['Log_TNA_lag'] > 0]  # Log(TNA) must be positive
+    df = df[df['Log_TNA_lag'] < 30] # Reasonable max for log(TNA)
+    
+    print(f"After aggressive cleaning: {len(df):,} rows")
+    
+    # WINSORIZATION: Cap the top and bottom 5% to neutralize outliers
     # This directly addresses the Skew: 136.8 and Kurtosis: 22990
-    df['Flow_Rate'] = winsorize(df['Flow_Rate'], limits=[0.01, 0.01])
-    df['Alpha'] = winsorize(df['Alpha'], limits=[0.01, 0.01])
+    df['Flow_Rate'] = winsorize(df['Flow_Rate'], limits=[0.05, 0.05])
+    df['Alpha'] = winsorize(df['Alpha'], limits=[0.05, 0.05])
+    
+    print(f"After winsorization:")
+    print(f"  Flow_Rate: min={df['Flow_Rate'].min():.4f}, max={df['Flow_Rate'].max():.4f}")
+    print(f"  Alpha: min={df['Alpha'].min():.4f}, max={df['Alpha'].max():.4f}")
     
     # Create the interaction terms needed for the simulation
     df['Alpha_Negative'] = (df['Alpha'] < 0).astype(int)
@@ -513,7 +621,7 @@ try:
     returns = load_return_data()
     tna = load_tna_data()
     fund_chars = load_fund_characteristics(returns)
-    alphas = calculate_alpha_rolling(returns, benchmarks)
+    alphas = calculate_alpha_rolling(returns, benchmarks, fund_chars)
 
     # Step 6: Calculate flows
     df = calculate_flows(returns, tna, fund_chars, alphas)
