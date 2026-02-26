@@ -270,81 +270,88 @@ def load_fund_characteristics(returns):
 # %%
 
 # %%
-def load_fund_types(filepath='fund_types.csv'):
+def load_fund_types(filepath='../Clean_funds_with_asset_class.csv'):
     """
-    Load fund type information from CSV
-    
-    Expected columns:
-    - Instrument: Lipper code
-    - Issue Lipper Global Scheme Name: Fund category/type
+    Load fund type / asset class information from Clean_funds_with_asset_class.csv.
+
+    Key columns used:
+    - FundClassLipperID  → joined as 'Instrument' to the regression dataset
+    - IssueLipperGlobalSchemeName → 36 asset class labels (e.g. 'Bond USD High Yield')
     """
     print("\n" + "="*80)
     print("LOADING FUND TYPE DATA")
     print("="*80)
-    
+
     fund_types = pd.read_csv(filepath)
-    
+    fund_types['Instrument'] = fund_types['FundClassLipperID'].astype(int).astype(str)
+    fund_types = fund_types[['Instrument', 'IssueLipperGlobalSchemeName']]
+
     print(f"\n✓ Loaded fund type data:")
     print(f"  Total funds: {len(fund_types):,}")
-    print(f"  Unique types: {fund_types['Issue Lipper Global Scheme Name'].nunique()}")
-    
-    print("\n  Sample fund types:")
-    print(fund_types['Issue Lipper Global Scheme Name'].value_counts().head(10))
-    
+    print(f"  Unique asset classes: {fund_types['IssueLipperGlobalSchemeName'].nunique()}")
+    print("\n  Asset class distribution:")
+    print(fund_types['IssueLipperGlobalSchemeName'].value_counts().to_string())
+
     return fund_types
 
 
-def filter_bond_funds(df, fund_types):
+def filter_by_asset_class(df, fund_types, asset_classes=None, keywords=None):
     """
-    Filter dataset to include ONLY bond funds
-    
-    Looks for keywords in 'Issue Lipper Global Scheme Name':
-    - 'Bond'
-    - 'Debt'
-    - 'Fixed Income'
-    - 'Credit'
-    
-    Parameters:
-    -----------
+    Filter fund data to selected asset classes from IssueLipperGlobalSchemeName.
+
+    Parameters
+    ----------
     df : DataFrame
-        Your main dataset with flows
+        Main regression dataset (must contain 'Instrument' column).
     fund_types : DataFrame
-        Fund type information from load_fund_types()
-    
-    Returns:
-    --------
-    DataFrame : Filtered to bond funds only
+        Output of load_fund_types() — columns: 'Instrument', 'IssueLipperGlobalSchemeName'.
+    asset_classes : list of str, optional
+        Exact IssueLipperGlobalSchemeName values to keep.
+        e.g. ['Bond USD High Yield', 'Bond USD Medium Term']
+        Takes priority over keywords. Pass None to fall back to keyword matching.
+    keywords : list of str, optional
+        Case-insensitive regex keywords matched against IssueLipperGlobalSchemeName.
+        e.g. ['bond', 'debt', 'fixed income']
+        Only used when asset_classes is None.
+        Pass None (together with asset_classes=None) to skip filtering entirely.
+
+    Returns
+    -------
+    DataFrame : filtered to selected asset classes, with 'IssueLipperGlobalSchemeName'
+                column appended.
     """
     print("\n" + "="*80)
-    print("FILTERING FOR BOND FUNDS")
+    print("ASSET CLASS FILTER")
     print("="*80)
-    
-    # Merge fund types with main data
-    df = pd.merge(df, fund_types[['Instrument', 'Issue Lipper Global Scheme Name']], 
-                  on='Instrument', how='left')
-    
-    print(f"\nBefore filtering: {len(df):,} observations, {df['Instrument'].nunique():,} funds")
-    
-    # Create filter for bond-related funds
-    bond_keywords = ['bond', 'debt', 'fixed income', 'credit', 'income']
-    
-    # Case-insensitive matching
-    bond_mask = df['Issue Lipper Global Scheme Name'].str.lower().str.contains(
-        '|'.join(bond_keywords), 
-        na=False, 
-        regex=True
-    )
-    
-    # Apply filter
-    df_bonds = df[bond_mask].copy()
-    
-    print(f"\nAfter filtering: {len(df_bonds):,} observations, {df_bonds['Instrument'].nunique():,} funds")
-    print(f"Reduction: {100*(len(df) - len(df_bonds))/len(df):.1f}% of observations removed")
-    
-    print("\n  Bond fund types found:")
-    print(df_bonds['Issue Lipper Global Scheme Name'].value_counts().head(15))
-    
-    return df_bonds
+
+    # Merge asset class labels onto main dataset
+    df = df.merge(fund_types, on='Instrument', how='left')
+
+    n_before = len(df)
+    funds_before = df['Instrument'].nunique()
+
+    if asset_classes is not None:
+        mask = df['IssueLipperGlobalSchemeName'].isin(asset_classes)
+    elif keywords is not None:
+        pattern = '|'.join(keywords)
+        mask = df['IssueLipperGlobalSchemeName'].str.contains(
+            pattern, case=False, na=False, regex=True
+        )
+    else:
+        print("\n⚠️  No asset class filter applied — using all funds.")
+        return df
+
+    df_filtered = df[mask].copy()
+
+    print(f"\n  Before: {n_before:,} obs | {funds_before:,} funds")
+    print(f"  After:  {len(df_filtered):,} obs | {df_filtered['Instrument'].nunique():,} funds")
+    print(f"  Removed: {100*(n_before - len(df_filtered))/n_before:.1f}% of observations")
+    print(f"\n  Asset classes included:")
+    for cls, cnt in df_filtered['IssueLipperGlobalSchemeName'].value_counts().items():
+        print(f"    {cls:<45} {cnt:>7,} obs")
+    print("="*80 + "\n")
+
+    return df_filtered
 
 
 # %%
@@ -611,6 +618,39 @@ def clean_data(df):
 
 # %%
 
+# =============================================================================
+# ASSET CLASS FILTER CONFIGURATION
+# ─────────────────────────────────────────────────────────────────────────────
+# Choose which fund types to include in the regression.
+#
+# Option A — exact match (recommended):
+#   Set ASSET_CLASSES to a list of exact IssueLipperGlobalSchemeName values.
+#   Available bond classes (20 categories, examples):
+#     'Bond USD High Yield'         'Bond USD Medium Term'
+#     'Bond USD Municipal'          'Bond USD Short Term'
+#     'Bond USD Corporates'         'Bond USD Government'
+#     'Bond USD Mortgages'          'Bond USD Inflation Linked'
+#     'Bond Global USD'             'Bond Global High Yield USD'
+#     'Bond Emerging Markets Global HC'
+#   Available equity classes (11 categories, examples):
+#     'Equity US'   'Equity US Sm&Mid Cap'   'Equity Global'
+#     'Equity Emerging Mkts Global'   'Equity Sector Real Est US'
+#   Mixed / money market:
+#     'Mixed Asset USD Conservative'   'Mixed Asset USD Aggressive'
+#     'Money Market USD'
+#
+# Option B — keyword matching (fuzzy):
+#   Set ASSET_KEYWORDS to a list of case-insensitive patterns.
+#   e.g. ['bond', 'debt', 'fixed income']   (only used when ASSET_CLASSES is None)
+#
+# To run on ALL funds without filtering:
+#   Set both ASSET_CLASSES = None and ASSET_KEYWORDS = None
+# =============================================================================
+
+ASSET_CLASSES = None            # e.g. ['Bond USD High Yield', 'Bond USD Medium Term']
+ASSET_KEYWORDS = ['bond']       # e.g. ['bond', 'debt', 'fixed income']
+# =============================================================================
+
 try:
     # Step 1: Download benchmarks
     benchmarks = download_benchmarks()
@@ -625,6 +665,10 @@ try:
 
     # Step 6: Calculate flows
     df = calculate_flows(returns, tna, fund_chars, alphas)
+
+    # Step 7: Filter by asset class (controlled by ASSET_CLASSES / ASSET_KEYWORDS above)
+    fund_types = load_fund_types()
+    df = filter_by_asset_class(df, fund_types, asset_classes=ASSET_CLASSES, keywords=ASSET_KEYWORDS)
 
 except Exception as e:
         print(f"\n❌ ERROR: {str(e)}")
