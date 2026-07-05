@@ -2,7 +2,6 @@
 *.xlsx
 *.xls
 *.png
-*.txt
 *.ipynb
 __pycache__/
 .vscode/
@@ -10,6 +9,7 @@ simulation_results/
 PM_Replication/
 Unsmooting_vs_observed/
 .DS_Store
+.claude/
 
 # Allow specific files in LSEG_download
 !LSEG_download/Fund_Flows_Regression.py

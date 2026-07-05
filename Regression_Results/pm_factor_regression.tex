@@ -1,0 +1,47 @@
+\begin{table}[htbp]
+\centering
+\footnotesize
+\caption{OLS regressions of unsmoothed Hamilton Lane returns on public-market factors and macro-regime dummies. M1: STOXX\,600 only; M2: STOXX\,600 + EUR Bond; M3: M2 + regime dummies (Goldilocks = base). Standard errors: Newey-West HAC (4 lags). Superscripts $^{***}$/$^{**}$/$^{*}$ denote significance at 1\%/5\%/10\%. t-statistics in parentheses.}
+\label{tab:pm_factor_regression}
+\begin{tabular}{lrrrrrrrrr}
+\toprule
+ & \multicolumn{3}{c|}{Composite} & \multicolumn{3}{c|}{Credit} & \multicolumn{3}{c}{Equity} \\
+ & M1 & M2 & M3 & M1 & M2 & M3 & M1 & M2 & M3 \\
+\midrule
+Intercept & $0.017^{***}$ & $0.021^{***}$ & $0.041^{***}$ & $0.021^{***}$ & $0.025^{***}$ & $0.043^{***}$ & $0.019^{***}$ & $0.022^{***}$ & $0.045^{***}$ \\
+ & $(3.43)$ & $(4.53)$ & $(2.89)$ & $(5.20)$ & $(6.29)$ & $(3.42)$ & $(3.34)$ & $(3.99)$ & $(2.93)$ \\[2pt]
+$r_{\text{STOXX}600}$ & $0.431^{***}$ & $0.432^{***}$ & $0.416^{***}$ & $0.317^{***}$ & $0.319^{***}$ & $0.304^{***}$ & $0.464^{***}$ & $0.464^{***}$ & $0.446^{***}$ \\
+ & $(5.46)$ & $(5.60)$ & $(5.58)$ & $(5.31)$ & $(6.04)$ & $(6.38)$ & $(5.91)$ & $(6.01)$ & $(5.82)$ \\[2pt]
+$r_{\text{EUR Bond}}$ &  & $-0.429^{**}$ & $-0.340$ &  & $-0.561^{***}$ & $-0.467^{***}$ &  & $-0.328$ & $-0.294$ \\
+ &  & $(-2.04)$ & $(-1.56)$ &  & $(-3.18)$ & $(-2.86)$ &  & $(-1.58)$ & $(-1.33)$ \\[2pt]
+$D_{\text{Overheat}}$ &  &  & $-0.004$ &  &  & $-0.002$ &  &  & $-0.011$ \\
+ &  &  & $(-0.26)$ &  &  & $(-0.13)$ &  &  & $(-0.63)$ \\[2pt]
+$D_{\text{Downturn}}$ &  &  & $-0.029^{*}$ &  &  & $-0.027^{*}$ &  &  & $-0.025$ \\
+ &  &  & $(-1.68)$ &  &  & $(-1.86)$ &  &  & $(-1.34)$ \\[2pt]
+$D_{\text{Stagflation}}$ &  &  & $-0.035^{**}$ &  &  & $-0.031^{**}$ &  &  & $-0.041^{***}$ \\
+ &  &  & $(-2.45)$ &  &  & $(-2.07)$ &  &  & $(-2.64)$ \\[2pt]
+\midrule
+$R^2$ & 0.305 & 0.325 & 0.373 & 0.238 & 0.287 & 0.346 & 0.307 & 0.317 & 0.358 \\
+Adj.\ $R^2$ & 0.297 & 0.311 & 0.339 & 0.230 & 0.272 & 0.312 & 0.300 & 0.303 & 0.324 \\
+$n$ & 100 & 100 & 100 & 100 & 100 & 100 & 100 & 100 & 100 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\footnotesize
+\caption{Regime-conditional annualised returns and volatilities of unsmoothed Hamilton Lane indices (EUR, quarterly bootstrap history). Sharpe ratio uses EUR 3-month OIS as risk-free rate. This table motivates the regime-conditional bootstrap in the ELTIF simulation.}
+\label{tab:pm_regime_stats}
+\begin{tabular}{lrrr|rrr|rrr}
+\toprule
+Regime & \multicolumn{3}{c|}{Composite} & \multicolumn{3}{c|}{Credit} & \multicolumn{3}{c}{Equity} \\
+ & Mean (ann.) & Vol (ann.) & Sharpe & Mean (ann.) & Vol (ann.) & Sharpe & Mean (ann.) & Vol (ann.) & Sharpe \\
+\midrule
+Goldilocks & 17.57\% & 11.60\% & 1.51 & 16.57\% & 9.03\% & 1.83 & 19.77\% & 12.85\% & 1.54 \\
+Overheating & 17.06\% & 10.99\% & 1.55 & 18.25\% & 10.28\% & 1.78 & 16.05\% & 13.28\% & 1.21 \\
+Downturn & 4.24\% & 17.02\% & 0.25 & 4.71\% & 11.68\% & 0.40 & 7.90\% & 17.22\% & 0.46 \\
+Stagflation & 0.00\% & 9.88\% & 0.00 & 2.45\% & 10.47\% & 0.23 & -0.61\% & 10.86\% & -0.06 \\
+\bottomrule
+\end{tabular}
+\end{table}

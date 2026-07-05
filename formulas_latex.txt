@@ -1,0 +1,293 @@
+% ============================================================
+%  ELTIF Cash Buffer Optimisation — Model Formulas (LaTeX)
+%  Covers: Waterfall Simulation (Stage 4) + Optimisation (Stage 4.5/4.6)
+% ============================================================
+
+% ── Paste this block into your preamble ─────────────────────
+\usepackage{amsmath, amssymb, booktabs, array}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\1}{\mathbf{1}}
+% ────────────────────────────────────────────────────────────
+
+
+% ============================================================
+%  STAGE 1 — GLM Unsmoothing
+% ============================================================
+
+% Getmansky–Lo–Makarov (2004) unsmoothing of observed PM returns:
+\begin{equation}
+  \eta_t = \frac{x_t - \sum_{j=1}^{k} \theta_j \, \eta_{t-j}}{\theta_0}
+  \label{eq:glm}
+\end{equation}
+% x_t: observed (smoothed) return; eta_t: true underlying return;
+% theta_j: MA weights estimated by MLE; k: lag order selected by BIC.
+
+
+% ============================================================
+%  STAGE 2 — EUR Conversion & Benchmarks
+% ============================================================
+
+% USD-to-EUR return conversion (FRED DEXUSEU quarterly):
+\begin{equation}
+  r^{\mathrm{EUR}}_t = \frac{1 + r^{\mathrm{USD}}_t}{1 + \Delta FX_t} - 1
+  \label{eq:fx}
+\end{equation}
+
+% Excess returns over EUR risk-free rate (EUR003):
+\begin{align}
+  \widetilde{r}^{\mathrm{STOXX}}_t  &= r^{\mathrm{STOXX600}}_t - r^{f}_t
+  \label{eq:excess_eq} \\
+  \widetilde{r}^{\mathrm{Bond}}_t   &= r^{\mathrm{EuroAgg}}_t  - r^{f}_t
+  \label{eq:excess_bd}
+\end{align}
+
+
+% ============================================================
+%  STAGE 3 — Fund Flow Regression (Goldstein et al. 2017)
+% ============================================================
+
+% Rolling alpha (8-quarter OLS, min. 6 obs):
+\begin{equation}
+  \alpha_t = \hat{\beta}_0 \quad \text{from} \quad
+  \underbrace{(r^{\mathrm{fund}}_s - \mathrm{TER}_q) - r^{f}_s}_{
+    \text{Excess fund return}} \;=\;
+  \beta_0
+  + \beta_1 \widetilde{r}^{\mathrm{STOXX}}_s
+  + \beta_2 \widetilde{r}^{\mathrm{Bond}}_s
+  + \varepsilon_s
+  \label{eq:alpha}
+\end{equation}
+
+% Flow regression (Model 2 — macro regime interactions):
+\begin{equation}
+\begin{aligned}
+  \mathrm{FlowRate}_t \;=\;&
+    \beta_0
+    + \alpha^{+} \cdot \alpha_t
+    + \alpha^{-} \cdot \alpha_t \cdot \1[\alpha_t < 0] \\
+  &+ \sum_{r \in \mathcal{R}} \!\left[
+       \alpha^{+}_{r} \cdot \alpha_t
+     + \alpha^{-}_{r} \cdot \alpha_t \cdot \1[\alpha_t < 0]
+     \right] \1[\mathrm{Regime}_t = r] \\
+  &+ \beta_{\mathrm{lag}} \cdot F_{t-1}
+   + \beta_{\mathrm{TNA}} \cdot \bigl(\log\mathrm{TNA}_{t-1} - \overline{\log\mathrm{TNA}}\bigr)
+   + \beta_{\mathrm{age}} \cdot \log\mathrm{Age}_t \\
+  &+ \beta_{\mathrm{TER}} \cdot \mathrm{TER}
+   + \gamma_q + \varepsilon_t
+\end{aligned}
+\label{eq:flow_reg}
+\end{equation}
+% Regimes R = {Goldilocks, Overheating, Downturn, Stagflation}
+% OLS with quarter fixed effects gamma_q; SE clustered at fund level.
+
+% Simulation intercept: raw beta_0 replaced by training-sample mean:
+\begin{equation}
+  \hat{\beta}^{\mathrm{sim}}_0 = \overline{\mathrm{FlowRate}}_{\mathrm{train}}
+  \label{eq:intercept_adj}
+\end{equation}
+
+
+% ============================================================
+%  STAGE 4 — ELTIF Simulation Waterfall
+% ============================================================
+
+% ── 4.1  Blended gross return ─────────────────────────────
+\begin{equation}
+  \mathrm{BlendedReturn}_t
+  = w \cdot \mathrm{TNA}_{t-1} \cdot r^{\mathrm{cash}}_t
+  + (1-w) \cdot \mathrm{TNA}_{t-1} \cdot r^{\mathrm{PM}}_t
+  \label{eq:blended}
+\end{equation}
+% w: cash weight; r^PM: Hamilton Lane composite index return (EUR, unsmoothed).
+
+% ── 4.2  Revolving credit interest ───────────────────────
+\begin{equation}
+  r^{\mathrm{credit}}_t
+  = \frac{r^{\mathrm{cash}}_t \times 4 + s}{4},
+  \qquad
+  \mathrm{CreditInterest}_t
+  = \mathrm{CreditOutstanding}_{t-1} \cdot r^{\mathrm{credit}}_t
+  \label{eq:credit}
+\end{equation}
+% s: credit spread (annualised); r^cash: EUR003 quarterly rate.
+
+% ── 4.3  Simulated fund flow ─────────────────────────────
+\begin{equation}
+  \mathrm{Flow}_t
+  = \mathrm{clip}\!\left(
+      \hat{F}\!\left(\alpha_t,\,\mathrm{Regime}_t;\,\hat{\theta}\right),
+      \;{-g},\; {+0.5}
+    \right)
+    \cdot \mathrm{TNA}_{t-1}
+  \label{eq:flow}
+\end{equation}
+% g: redemption gate (10% regulatory / 50% stress); F-hat: predicted FlowRate from eq.(5).
+
+% ── 4.4  Outflow waterfall  (Flow_t < 0, demand D = -Flow_t) ──
+\begin{align}
+  \mathrm{CashDrawn}_t       &= \min\!\bigl(D,\;\mathrm{CashPool}_{t-1}\bigr)
+  \label{eq:wf_cash} \\
+  \mathrm{CreditDrawn}_t     &= \min\!\bigl(
+    D - \mathrm{CashDrawn}_t,\;
+    \mathrm{CreditCap} - \mathrm{CreditOutstanding}_{t-1}
+  \bigr)
+  \label{eq:wf_credit} \\
+  \mathrm{ForcedSale}_t      &= \max\!\bigl(
+    D - \mathrm{CashDrawn}_t - \mathrm{CreditDrawn}_t,\;0
+  \bigr)
+  \label{eq:wf_forced} \\
+  \mathrm{Haircut}_t         &= \mathrm{ForcedSale}_t \times h
+  \label{eq:haircut}
+\end{align}
+% h: haircut rate; ForcedSale triggers a Forced Liquidation (FL) event.
+
+% ── 4.5  Inflow waterfall  (Flow_t > 0) ────────────────────
+% Priority order:
+%   1. Restore cash buffer to w * TNA^new
+%   2. Repay revolving credit outstanding
+%   3. Remainder to PM pool
+
+% ── 4.6  TNA update ────────────────────────────────────────
+\begin{equation}
+  \mathrm{TNA}_t
+  = \mathrm{TNA}_{t-1}
+  + \mathrm{BlendedReturn}_t
+  - \mathrm{CreditInterest}_t
+  - \mathrm{Haircut}_t
+  + \mathrm{Flow}_t
+  \label{eq:tna}
+\end{equation}
+
+% ── 4.7  Per-unit investor return ──────────────────────────
+\begin{equation}
+  r^{\mathrm{investor}}_t
+  = \frac{\mathrm{BlendedReturn}_t - \mathrm{CreditInterest}_t - \mathrm{Haircut}_t}
+         {\mathrm{TNA}_{t-1}}
+  \label{eq:r_investor}
+\end{equation}
+% Net of TER (embedded in r^PM), credit costs, and haircut friction.
+% Fund inflows/outflows do NOT affect per-unit value.
+
+% ── 4.8  Terminal wealth ratio ─────────────────────────────
+\begin{equation}
+  W_T = \prod_{t=1}^{T} \bigl(1 + r^{\mathrm{investor}}_t\bigr)
+  \label{eq:wealth}
+\end{equation}
+
+
+% ============================================================
+%  STAGE 4.5 — CRRA Cash Buffer Optimisation
+% ============================================================
+
+% ── 5.1  CRRA utility of terminal wealth ───────────────────
+\begin{equation}
+  U_\gamma(W_T) =
+  \begin{cases}
+    \dfrac{W_T^{1-\gamma}}{1-\gamma} & \gamma \neq 1 \\[6pt]
+    \ln W_T                          & \gamma = 1
+  \end{cases}
+  \label{eq:crra}
+\end{equation}
+% gamma: CRRA risk-aversion coefficient (gamma=1: log utility; gamma=2: standard benchmark).
+
+% ── 5.2  Objective: expected CRRA utility ──────────────────
+\begin{equation}
+  \hat{U}_\gamma(w,s)
+  = \frac{1}{N} \sum_{n=1}^{N} U_\gamma\!\left(W_T^{(n)}\right)
+  \label{eq:crra_hat}
+\end{equation}
+% N: Monte Carlo paths; s: scenario (regulatory / stress).
+
+% ── 5.3  Optimal cash weight ───────────────────────────────
+\begin{equation}
+  w^*(\gamma, s)
+  = \operatorname*{arg\,max}_{w \in \mathcal{W}}\; \hat{U}_\gamma(w, s),
+  \qquad
+  \mathcal{W} = \{0\%,\,1\%,\,\ldots,\,50\%\}
+  \label{eq:w_star}
+\end{equation}
+
+% ── 5.4  Expected annualised log return ────────────────────
+\begin{equation}
+  \E[r_{\log}](w)
+  = \frac{1}{N} \sum_{n=1}^{N} \frac{\ln W_T^{(n)}}{T}
+  \label{eq:log_return}
+\end{equation}
+% T = 40 quarters (10 years); annualised by multiplying by 4.
+
+
+% ============================================================
+%  STAGE 4.6 — Sensitivity Metrics
+% ============================================================
+
+% ── 6.1  Return drag vs. no-buffer ─────────────────────────
+\begin{equation}
+  \mathrm{ReturnDrag}(w^*, s)
+  = \Bigl(\E[r_{\log}]\!\bigl(w{=}0,s\bigr)
+         - \E[r_{\log}]\!\bigl(w^*,s\bigr)\Bigr)
+    \times 10{,}000
+  \quad [\text{bps/yr}]
+  \label{eq:return_drag}
+\end{equation}
+% Opportunity cost of holding the buffer; positive = buffer costs return.
+
+% ── 6.2  Haircut cost as % of initial TNA ─────────────────
+\begin{equation}
+  \mathrm{HaircutCost}\%
+  = \frac{\E[\mathrm{ForcedSale} \mid \mathrm{FL}] \times h}
+         {\mathrm{TNA}_0}
+    \times 100
+  \label{eq:haircut_cost}
+\end{equation}
+% Severity of each FL event as % of initial fund size (EUR 100M).
+
+% ── 6.3  Forced liquidation probability ────────────────────
+\begin{equation}
+  P(\mathrm{FL})
+  = \frac{1}{N} \sum_{n=1}^{N}
+    \1\!\left[\exists\, t \in [1,T] : \mathrm{ForcedSale}_t^{(n)} > 0\right]
+  \label{eq:p_fl}
+\end{equation}
+% Fraction of paths experiencing at least one FL event over horizon T.
+
+% ── 6.4  Illiquidity premium ───────────────────────────────
+\begin{equation}
+  \mathrm{IlliqPremium}(w)
+  = 4 \cdot \E\!\left[\ln\!\bigl(1 + r^{\mathrm{ELTIF}}_t(w)\bigr)\right]
+  - 4 \cdot \E\!\left[\ln\!\bigl(1 + r^{\mathrm{STOXX600}}_t\bigr)\right]
+  \label{eq:illiq_premium}
+\end{equation}
+% where r^ELTIF_t(w) = (1-w)*r^PM_t + w*r^cash_t - TER_quarterly.
+% Multiplied by 4 to annualise from quarterly log returns.
+
+
+% ============================================================
+%  SENSITIVITY GRID  (Stage 4.6)
+% ============================================================
+% Grid: h in {5%, 10%, 15%, 20%, 30%}  x  s in {100, 200, 300, 400, 500} bps
+% Each cell: full optimize_cash_buffer.py run (N=1,000 paths, 51 weights, 2 scenarios)
+% Summary table at gamma=2 reports: w*, E[r_log], ReturnDrag, HaircutCost%
+
+
+% ============================================================
+%  TABLE SHELL — copy into your thesis
+% ============================================================
+\begin{table}[htbp]
+\centering
+\caption{Sensitivity of optimal cash weight $w^*$ to haircut rate and credit spread
+         ($\gamma = 2$, regulatory gate $g = 10\%$).}
+\label{tab:sensitivity}
+\begin{tabular}{l *{5}{c}}
+\toprule
+Haircut $h$ & \multicolumn{5}{c}{Credit spread $s$} \\
+\cmidrule(lr){2-6}
+            & 100\,bps & 200\,bps & 300\,bps & 400\,bps & 500\,bps \\
+\midrule
+ 5\%  &  &  &  &  & \\
+10\%  &  &  &  &  & \\
+15\%  &  &  &  &  & \\
+20\%  &  &  &  &  & \\
+30\%  &  &  &  &  & \\
+\bottomrule
+\end{tabular}
+\end{table}

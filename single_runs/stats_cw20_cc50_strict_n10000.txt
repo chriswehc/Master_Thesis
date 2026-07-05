@@ -1,0 +1,33 @@
+======================================================================
+SIMULATION STATISTICS
+======================================================================
+  Cash weight:                20%
+  Credit capacity:            50%
+  Gate mode:                  strict
+  Haircut rate:               5%
+  Credit spread:              3.00%
+  PM index:                   composite
+  Paths simulated:            10,000
+  Horizon:                    10 years
+──────────────────────────────────────────────────────────────────────
+  RETURNS
+  E[log growth] (ann.):       +4.83%
+  Std[log growth]:            42.97%
+  Illiq. premium vs STOXX600: +315 bps/yr
+  Median final TNA:           €145,551,221
+  P10 final TNA:              €82,494,782
+──────────────────────────────────────────────────────────────────────
+  LIQUIDITY STRESS
+  P(≥1 forced liquidation):   21.57%
+  P(≥1 credit draw):          87.46%
+  E[shortfall | FL]:          €30,345,915
+  Haircut cost (% of TNA):    1.52%
+  Avg credit outstanding/qtr: €11,813,378
+  Avg total credit interest:  €4,423,912  (4.42% of TNA)
+──────────────────────────────────────────────────────────────────────
+  MACRO REGIME DISTRIBUTION
+    Goldilocks        16.6%
+    Overheating       23.6%
+    Downturn          31.0%
+    Stagflation       28.8%
+======================================================================

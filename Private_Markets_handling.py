@@ -217,7 +217,7 @@ def vola_smoothing_analysis (df_observed,df_unsmoothed):
     rows = []
     for col in df_observed.columns:
         obs = df_observed[col].dropna()
-        uns = unsmoothed_df[col].dropna()
+        uns = df_unsmoothed[col].dropna()
 
         idx = obs.index.intersection(uns.index)
         obs = obs.loc[idx]
