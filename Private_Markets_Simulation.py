@@ -23,7 +23,7 @@ Currency note
 Inputs (all relative to MT_Python/):
   Hamilton_Lane_unsmoothed_returns.csv
   Cash_quarterly_returns.csv
-  LSEG_merged/macro_regimes.csv
+  LSEG_merged/macro_indicators.csv
   bloomberg_benchmarks.csv  (Bloomberg export: Date, SXXR_Index, LBEATREU_Index)
 
 Output:
