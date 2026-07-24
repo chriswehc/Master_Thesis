@@ -153,24 +153,13 @@ def calculate_flow_macro_regime(
     lagged_flow,
     tna_lag,
     coefficients,
-    cash_weight_target,           # target cash fraction (e.g. 0.20) — used for strict gate
-    max_inflow_rate=0.50,         # uncapped inflow ceiling
-    buffer_gate_fraction=0.5,     # ELTIF 2.0: gate = this fraction of the TARGET cash weight
-    gate_mode='strict',           # 'strict': fixed target-based gate | 'economic': fixed TNA gate
-    redemption_gate_pct=0.20,     # economic mode: fixed redemption cap as fraction of TNA
 ):
     """
-    Calculate fund flow using Goldstein model with macro regime interactions.
-
-    gate_mode='strict'  (ELTIF 2.0 regulatory):
-        Total outflow capped at buffer_gate_fraction × cash_weight_target.
-        E.g. cash_weight=20%, buffer_gate_fraction=50% → gate = 10% of TNA, always.
-        Gate is anchored to the declared target weight, not the current actual pool.
-
-    gate_mode='economic' (genuine optimization landscape):
-        Total outflow capped at a fixed redemption_gate_pct of TNA (e.g. 20%).
-        Full cash pool services the redemption; excess spills to credit → PM sale.
-        Investors always redeem fully up to the fixed gate.
+    Calculate raw (uncapped) fund flow using Goldstein model with macro regime
+    interactions. Returns the regression-implied flow rate before any
+    redemption-gate is applied — gating and backlog queuing happen in the
+    caller (simulate_fund_with_buffer), which holds the per-quarter state
+    needed to carry unmet redemption demand forward.
 
     NOTE: TER is NOT included as a parameter because:
     - Alpha is already calculated on NET returns (after fees)
@@ -196,15 +185,6 @@ def calculate_flow_macro_regime(
     flow += controls.get('alpha_negative_indicator', 0.0) * (1.0 if alpha < 0 else 0.0)  # β_neg indicator
     flow += controls['lagged_flow'] * lagged_flow
     flow += controls['log_tna'] * np.log(tna_lag) if tna_lag > 0 else 0
-
-    if gate_mode == 'strict':
-        # Gate = buffer_gate_fraction × target cash weight (fixed, not dependent on actual pool level)
-        # e.g. cash_weight=20%, buffer_gate_fraction=50% → gate = 10% of TNA, always
-        fixed_gate = buffer_gate_fraction * cash_weight_target
-        flow = np.clip(flow, -fixed_gate, max_inflow_rate)
-    else:
-        # Economic mode: fixed TNA-based gate; full cash pool available in waterfall
-        flow = np.clip(flow, -redemption_gate_pct, max_inflow_rate)
 
     return flow
 
@@ -245,6 +225,7 @@ def simulate_fund_with_buffer(
     """
 
     n_quarters = len(pm_returns_path)
+    max_inflow_rate = 0.50   # uncapped inflow ceiling (unrelated to the redemption gate)
 
     # ── Results DataFrame ─────────────────────────────────────────────────────
     results = pd.DataFrame({
@@ -265,6 +246,7 @@ def simulate_fund_with_buffer(
         'Credit_Interest':     np.zeros(n_quarters),
         'Blended_Return_Amt':    np.zeros(n_quarters),  # gross investment gain (€) before flows/costs
         'Haircut':               np.zeros(n_quarters),  # forced-liquidation friction loss (€)
+        'Redemption_Backlog':    np.zeros(n_quarters),  # unmet redemption demand (€) carried into next quarter
         'Regime':                [''] * n_quarters
     })
 
@@ -304,6 +286,7 @@ def simulate_fund_with_buffer(
         alpha              = results.loc[t-1, 'Alpha']
         tna_lag            = results.loc[t-1, 'TNA']
         credit_outstanding = results.loc[t-1, 'Credit_Outstanding']
+        backlog_prev       = results.loc[t-1, 'Redemption_Backlog']
 
         # ── Cash return this quarter ──────────────────────────────────────────
         if cash_returns is not None and t < len(cash_returns):
@@ -364,23 +347,39 @@ def simulate_fund_with_buffer(
             results.loc[t, 'Credit_Interest'] = credit_interest
 
         # ── Investor flow ─────────────────────────────────────────────────────
+        # Redemption gate: demand above the quarterly gate is not discarded —
+        # it is queued as a backlog and re-presented (together with new
+        # redemption demand) against the gate in subsequent quarters, until
+        # cleared. Backlog only accumulates/clears in net-outflow quarters;
+        # in net-inflow quarters it is simply carried forward unchanged.
         if np.isnan(alpha):
-            flow_rate = 0.0
+            raw_flow_rate = 0.0
         else:
-            flow_rate = calculate_flow_macro_regime(
+            raw_flow_rate = calculate_flow_macro_regime(
                 alpha=alpha,
                 regime=regime,
                 lagged_flow=lagged_flow,
                 tna_lag=tna_lag,
                 coefficients=coefficients,
-                cash_weight_target=cash_weight,
-                buffer_gate_fraction=buffer_gate_fraction,
-                gate_mode=gate_mode,
-                redemption_gate_pct=redemption_gate_pct,
             )
 
+        raw_flow_amount = raw_flow_rate * tna_lag
+        gate_rate    = (buffer_gate_fraction * cash_weight) if gate_mode == 'strict' else redemption_gate_pct
+        gate_cap_amt = gate_rate * tna_lag
+
+        if raw_flow_amount < 0:
+            total_demand = backlog_prev + abs(raw_flow_amount)
+            serviced     = min(total_demand, gate_cap_amt)
+            new_backlog  = total_demand - serviced
+            flow_amount  = -serviced
+            flow_rate    = flow_amount / tna_lag if tna_lag > 0 else 0.0
+        else:
+            new_backlog  = backlog_prev          # frozen this quarter
+            flow_amount  = min(raw_flow_amount, max_inflow_rate * tna_lag)
+            flow_rate    = flow_amount / tna_lag if tna_lag > 0 else 0.0
+
+        results.loc[t, 'Redemption_Backlog'] = new_backlog
         results.loc[t, 'Flow_Rate'] = flow_rate
-        flow_amount = flow_rate * tna_lag
         results.loc[t, 'Flow'] = flow_amount
 
         # =================================================================
@@ -584,7 +583,12 @@ def calculate_eltif_metrics(eltif_results):
     # Outstanding credit statistics
     metrics['avg_credit_outstanding'] = eltif_results['Credit_Outstanding'].mean()
     metrics['max_credit_outstanding'] = eltif_results['Credit_Outstanding'].max()
-    
+
+    # Redemption backlog (queued/unmet redemption demand) statistics
+    metrics['avg_redemption_backlog'] = eltif_results['Redemption_Backlog'].mean()
+    metrics['max_redemption_backlog'] = eltif_results['Redemption_Backlog'].max()
+    metrics['backlog_probability'] = (eltif_results['Redemption_Backlog'] > 0).mean()
+
     # Total credit interest paid
     metrics['total_credit_interest'] = eltif_results['Credit_Interest'].sum()
     metrics['avg_credit_interest_per_quarter'] = eltif_results['Credit_Interest'].mean()
@@ -660,6 +664,7 @@ def calculate_optimization_metrics(eltif_results, initial_tna, horizon_years=10)
     # Per-path flags (True if the path ever hit that threshold)
     fl_any = (eltif_results['Shortfall_Flag'] == 2).groupby(level='path').any()
     cr_any = (eltif_results['Shortfall_Flag'] >= 1).groupby(level='path').any()
+    bl_any = (eltif_results['Redemption_Backlog'] > 0).groupby(level='path').any()
 
     # Per-path total FL shortfall (€) — sum of all forced-liquidation shortfall
     # amounts within a path (0 if no FL event on that path)
@@ -679,6 +684,7 @@ def calculate_optimization_metrics(eltif_results, initial_tna, horizon_years=10)
         'p10_final_tna':              float(final_tna.quantile(0.10)),
         'p_fl_any_path':              float(fl_any.mean()),   # ← X-axis of frontier
         'p_credit_any_path':          float(cr_any.mean()),
+        'p_backlog_any_path':         float(bl_any.mean()),
         'log_growth_std':             float(log_growth.std()),
         # Shortfall severity (€) — requires re-run to appear in frontier CSV
         'expected_shortfall_fl_uncond': float(fl_shortfall_uncond),  # unconditional mean over all paths
